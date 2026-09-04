@@ -1,0 +1,8 @@
+{
+  "name": "Dashcam",
+  "description": "A lightweight driver-assistance dashcam application.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
