@@ -11,5 +11,11 @@ data class DetectorStats(
     val leadVehicleType: String = "NONE",
     val leadScore: Float = 0f,
     val modelResolution: String = "Unknown",
-    val skippedFrames: Int = 0
+    val skippedFrames: Int = 0,
+    val maxVehicleConf: Float = 0f,
+    val rawCandidatesCount: Int = 0,
+    val aboveConfCount: Int = 0,
+    val validBoxCount: Int = 0,
+    val afterNmsCount: Int = 0,
+    val minConfidence: Float = 0.40f
 )

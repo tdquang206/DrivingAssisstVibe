@@ -132,11 +132,10 @@ class DashcamForegroundService : Service(), LifecycleOwner {
                 }
 
                 val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-                val bitmap = imageProxy.toBitmap() // toBitmap() automatically applies the rotationDegrees
+                val bitmap = imageProxy.toBitmap()
                 lastInferenceTimestamp = now
 
-                // Pass 0 for rotation because the bitmap is already upright
-                val frame = detector.detect(bitmap, 0)
+                val frame = detector.detect(bitmap, rotationDegrees)
 
                 val completedNow = SystemClock.elapsedRealtime()
                 recentInferenceTimestamps.addLast(completedNow)
@@ -165,7 +164,13 @@ class DashcamForegroundService : Service(), LifecycleOwner {
                     leadVehicleType = "NONE",
                     leadScore = 0f,
                     modelResolution = "640x640",
-                    skippedFrames = skippedFramesCount
+                    skippedFrames = skippedFramesCount,
+                    maxVehicleConf = frame.diagnostics.maxVehicleConf,
+                    rawCandidatesCount = frame.diagnostics.rawCount,
+                    aboveConfCount = frame.diagnostics.aboveConfCount,
+                    validBoxCount = frame.diagnostics.validBoxCount,
+                    afterNmsCount = frame.diagnostics.afterNmsCount,
+                    minConfidence = (detector as? YoloVehicleDetector)?.minConfidence ?: 0.40f
                 )
 
                 _detectionState.value = VehicleDetectionState(

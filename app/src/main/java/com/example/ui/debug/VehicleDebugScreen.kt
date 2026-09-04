@@ -160,7 +160,12 @@ fun VehicleDebugScreen(onBack: () -> Unit) {
             Text("Detections: ${s.vehicleCount}", color = Color.White, fontSize = 14.sp)
             Text("Model: ${s.modelResolution}", color = Color.White, fontSize = 14.sp)
             Text("Skipped Frames: ${s.skippedFrames}", color = Color.White, fontSize = 14.sp)
-            Text("Min Confidence: 0.40", color = Color.White, fontSize = 14.sp) // Hardcoded based on request
+            Spacer(modifier = Modifier.height(6.dp))
+            Text("Max vehicle conf: ${"%.2f".format(s.maxVehicleConf)}", color = Color.Yellow, fontSize = 14.sp)
+            Text("Vehicle raw: ${s.rawCandidatesCount}", color = Color.White, fontSize = 14.sp)
+            Text("Above ${"%.2f".format(s.minConfidence)}: ${s.aboveConfCount}", color = Color.White, fontSize = 14.sp)
+            Text("Valid boxes: ${s.validBoxCount}", color = Color.White, fontSize = 14.sp)
+            Text("After NMS: ${s.afterNmsCount}", color = Color.White, fontSize = 14.sp)
         }
     }
 }

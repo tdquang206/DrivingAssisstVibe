@@ -39,6 +39,16 @@ class YoloVehicleDetector(
                 useXNNPACK = true
             }
             interpreter = Interpreter(modelBuffer, options)
+
+            val inputTensor = interpreter!!.getInputTensor(0)
+            val outputTensor = interpreter!!.getOutputTensor(0)
+
+            Log.d(TAG, "YOLO input shape=${inputTensor.shape().contentToString()}")
+            Log.d(TAG, "YOLO input type=${inputTensor.dataType()}")
+
+            Log.d(TAG, "YOLO output shape=${outputTensor.shape().contentToString()}")
+            Log.d(TAG, "YOLO output type=${outputTensor.dataType()}")
+
             Log.d(TAG, "YOLO detector initialized successfully with $modelPath (threads=$numThreads)")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load YOLO model: $modelPath", e)
@@ -73,6 +83,9 @@ class YoloVehicleDetector(
         val candidateList = mutableListOf<DetectedVehicle>()
         val predictions = outputBuffer[0] // 84 rows x 8400 columns
         var highestScoreInFrame = 0f
+        var rawCandidateCount = 0
+        var aboveThresholdCount = 0
+        var validBoxCount = 0
 
         for (i in 0 until 8400) {
             // Vehicle class scores in COCO (rows 4+cls)
@@ -101,7 +114,12 @@ class YoloVehicleDetector(
                 highestScoreInFrame = maxScore
             }
 
+            if (maxScore >= 0.05f) {
+                rawCandidateCount++
+            }
+
             if (maxScore >= minConfidence) {
+                aboveThresholdCount++
                 val cx = predictions[0][i]
                 val cy = predictions[1][i]
                 val w = predictions[2][i]
@@ -109,6 +127,7 @@ class YoloVehicleDetector(
 
                 val rect = preprocessor.mapToNormalizedRect(cx, cy, w, h, preprocessed)
                 if (rect.area >= minNormalizedArea && rect.width > 0.01f && rect.height > 0.01f) {
+                    validBoxCount++
                     candidateList.add(
                         DetectedVehicle(
                             trackingId = null,
@@ -126,14 +145,24 @@ class YoloVehicleDetector(
         val t3 = SystemClock.elapsedRealtime()
         latestPostprocessTimeMs = t3 - t2
         
-        if (highestScoreInFrame > 0.05f) {
-            Log.d(TAG, "Highest vehicle confidence in frame: $highestScoreInFrame, Detected: ${nmsVehicles.size}")
-        }
+        Log.d(
+            TAG,
+            "Max vehicle conf: ${"%.2f".format(highestScoreInFrame)}, Vehicle raw: $rawCandidateCount, Above ${"%.2f".format(minConfidence)}: $aboveThresholdCount, Valid boxes: $validBoxCount, After NMS: ${nmsVehicles.size}"
+        )
+
+        val diagnostics = DiagnosticMetrics(
+            maxVehicleConf = highestScoreInFrame,
+            rawCount = rawCandidateCount,
+            aboveConfCount = aboveThresholdCount,
+            validBoxCount = validBoxCount,
+            afterNmsCount = nmsVehicles.size
+        )
 
         return DetectionFrame(
             timestampMs = System.currentTimeMillis(),
             vehicles = nmsVehicles,
-            inferenceTimeMs = latestInferenceTimeMs
+            inferenceTimeMs = latestInferenceTimeMs,
+            diagnostics = diagnostics
         )
     }
 

@@ -31,8 +31,17 @@ data class DetectedVehicle(
     val isLead: Boolean = false
 )
 
+data class DiagnosticMetrics(
+    val maxVehicleConf: Float = 0f,
+    val rawCount: Int = 0,
+    val aboveConfCount: Int = 0,
+    val validBoxCount: Int = 0,
+    val afterNmsCount: Int = 0
+)
+
 data class DetectionFrame(
     val timestampMs: Long,
     val vehicles: List<DetectedVehicle>,
-    val inferenceTimeMs: Long
+    val inferenceTimeMs: Long,
+    val diagnostics: DiagnosticMetrics = DiagnosticMetrics()
 )
