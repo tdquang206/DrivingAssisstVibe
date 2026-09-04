@@ -72,6 +72,7 @@ class YoloVehicleDetector(
         // 3. Postprocessing
         val candidateList = mutableListOf<DetectedVehicle>()
         val predictions = outputBuffer[0] // 84 rows x 8400 columns
+        var highestScoreInFrame = 0f
 
         for (i in 0 until 8400) {
             // Vehicle class scores in COCO (rows 4+cls)
@@ -94,6 +95,10 @@ class YoloVehicleDetector(
             if (truckScore > maxScore) {
                 maxScore = truckScore
                 vehicleType = VehicleType.TRUCK
+            }
+
+            if (maxScore > highestScoreInFrame) {
+                highestScoreInFrame = maxScore
             }
 
             if (maxScore >= minConfidence) {
@@ -120,6 +125,10 @@ class YoloVehicleDetector(
         val nmsVehicles = applyNms(candidateList, nmsIoUThreshold)
         val t3 = SystemClock.elapsedRealtime()
         latestPostprocessTimeMs = t3 - t2
+        
+        if (highestScoreInFrame > 0.05f) {
+            Log.d(TAG, "Highest vehicle confidence in frame: $highestScoreInFrame, Detected: ${nmsVehicles.size}")
+        }
 
         return DetectionFrame(
             timestampMs = System.currentTimeMillis(),

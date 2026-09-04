@@ -132,10 +132,11 @@ class DashcamForegroundService : Service(), LifecycleOwner {
                 }
 
                 val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-                val bitmap = imageProxy.toBitmap()
+                val bitmap = imageProxy.toBitmap() // toBitmap() automatically applies the rotationDegrees
                 lastInferenceTimestamp = now
 
-                val frame = detector.detect(bitmap, rotationDegrees)
+                // Pass 0 for rotation because the bitmap is already upright
+                val frame = detector.detect(bitmap, 0)
 
                 val completedNow = SystemClock.elapsedRealtime()
                 recentInferenceTimestamps.addLast(completedNow)
