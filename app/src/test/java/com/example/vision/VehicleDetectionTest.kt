@@ -45,12 +45,13 @@ class VehicleDetectionTest {
             padY = 140f
         )
 
-        // Center of the active image area: cx = 320, cy = 140 + 180 = 320, w = 160, h = 90
+        // Model coordinates are normalized to the 640x640 letterboxed input.
+        // In pixels: cx = 320, cy = 320, w = 160, h = 90.
         val normRect = preprocessor.mapToNormalizedRect(
-            cx = 320f,
-            cy = 320f,
-            w = 160f,
-            h = 90f,
+            cx = 0.5f,
+            cy = 0.5f,
+            w = 0.25f,
+            h = 90f / 640f,
             frame = frame
         )
 
@@ -61,6 +62,35 @@ class VehicleDetectionTest {
         assertEquals(0.5f, normRect.centerY, 0.005f)
         assertEquals(0.25f, normRect.width, 0.005f)
         assertEquals(0.25f, normRect.height, 0.005f)
+    }
+
+    @Test
+    fun testS24NormalizedBoxSurvivesSizeFilter() {
+        val preprocessor = VehicleDetectionPreprocessor()
+        // Actual S24 diagnostic: 90-degree rotation already applied by preprocessing.
+        val frame = VehicleDetectionPreprocessor.PreprocessedFrame(
+            inputBuffer = java.nio.ByteBuffer.allocateDirect(0),
+            originalWidth = 480,
+            originalHeight = 640,
+            scale = 1f,
+            padX = 80f,
+            padY = 0f
+        )
+        val rect = preprocessor.mapToNormalizedRect(
+            cx = 0.4763185f,
+            cy = 0.682813f,
+            w = 0.09989901f,
+            h = 0.07047339f,
+            frame = frame
+        )
+
+        assertEquals(0.4018253f, rect.left, 0.00001f)
+        assertEquals(0.6475763f, rect.top, 0.00001f)
+        assertEquals(0.5350240f, rect.right, 0.00001f)
+        assertEquals(0.7180497f, rect.bottom, 0.00001f)
+        assertTrue(rect.width > 0.01f)
+        assertTrue(rect.height > 0.01f)
+        assertTrue(rect.area >= 0.0005f)
     }
 
     @Test

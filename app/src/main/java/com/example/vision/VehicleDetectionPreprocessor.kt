@@ -94,6 +94,8 @@ class VehicleDetectionPreprocessor(
         )
     }
 
+    // cx/cy/w/h are normalized to the letterboxed model input, as emitted by
+    // the bundled TFLite model. Return coordinates in the oriented camera image.
     fun mapToNormalizedRect(
         cx: Float,
         cy: Float,
@@ -101,10 +103,11 @@ class VehicleDetectionPreprocessor(
         h: Float,
         frame: PreprocessedFrame
     ): NormalizedRect {
-        val boxLeft = cx - w / 2f
-        val boxTop = cy - h / 2f
-        val boxRight = cx + w / 2f
-        val boxBottom = cy + h / 2f
+        // Convert to input pixels before subtracting pixel-valued letterbox padding.
+        val boxLeft = (cx - w / 2f) * inputWidth
+        val boxTop = (cy - h / 2f) * inputHeight
+        val boxRight = (cx + w / 2f) * inputWidth
+        val boxBottom = (cy + h / 2f) * inputHeight
 
         val unpaddedLeft = (boxLeft - frame.padX) / frame.scale
         val unpaddedTop = (boxTop - frame.padY) / frame.scale
