@@ -17,5 +17,9 @@ data class DetectorStats(
     val aboveConfCount: Int = 0,
     val validBoxCount: Int = 0,
     val afterNmsCount: Int = 0,
-    val minConfidence: Float = 0.40f
+    val minConfidence: Float = 0.40f,
+    val processedFrames: Long = 0,
+    val detectorStatus: String = "Waiting for camera frames",
+    val modelIdentity: String = "",
+    val boxSummary: String = "Waiting for a frame"
 )

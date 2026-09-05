@@ -5,9 +5,12 @@ import android.graphics.Bitmap
 import android.os.SystemClock
 import android.util.Log
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.DataType
 import java.io.FileInputStream
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import java.security.MessageDigest
+import java.util.Locale
 
 class YoloVehicleDetector(
     context: Context,
@@ -21,6 +24,10 @@ class YoloVehicleDetector(
     private val preprocessor = VehicleDetectionPreprocessor(inputWidth = 640, inputHeight = 640)
     private var interpreter: Interpreter? = null
     private var lastBoxDiagnosticTimeMs = -2000L
+    var initializationError: String? = null
+        private set
+    var modelIdentity: String = "Not loaded"
+        private set
 
     // Output shape for YOLOv8n: [1, 84, 8400]
     private val outputBuffer = Array(1) { Array(84) { FloatArray(8400) } }
@@ -35,6 +42,8 @@ class YoloVehicleDetector(
     init {
         try {
             val modelBuffer = loadModelFile(context, modelPath)
+            val digest = MessageDigest.getInstance("SHA-256").apply { update(modelBuffer.duplicate()) }
+            modelIdentity = digest.digest().joinToString("") { "%02x".format(it) }.take(12)
             val options = Interpreter.Options().apply {
                 setNumThreads(numThreads)
                 useXNNPACK = true
@@ -50,24 +59,35 @@ class YoloVehicleDetector(
             Log.d(TAG, "YOLO output shape=${outputTensor.shape().contentToString()}")
             Log.d(TAG, "YOLO output type=${outputTensor.dataType()}")
 
-            Log.d(TAG, "YOLO detector initialized successfully with $modelPath (threads=$numThreads)")
+            require(inputTensor.shape().contentEquals(intArrayOf(1, 640, 640, 3)) &&
+                inputTensor.dataType() == DataType.FLOAT32) {
+                "Unsupported input: ${inputTensor.shape().contentToString()} ${inputTensor.dataType()}"
+            }
+            require(outputTensor.shape().contentEquals(intArrayOf(1, 84, 8400)) &&
+                outputTensor.dataType() == DataType.FLOAT32) {
+                "Unsupported output: ${outputTensor.shape().contentToString()} ${outputTensor.dataType()}"
+            }
+
+            Log.d(TAG, "YOLO detector $DIAGNOSTIC_REVISION initialized with $modelPath sha256=$modelIdentity (threads=$numThreads)")
         } catch (e: Exception) {
+            interpreter?.close()
+            interpreter = null
+            initializationError = e.message ?: e.javaClass.simpleName
             Log.e(TAG, "Failed to load YOLO model: $modelPath", e)
         }
     }
 
     private fun loadModelFile(context: Context, modelFileName: String): MappedByteBuffer {
-        val fileDescriptor = context.assets.openFd(modelFileName)
-        val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
-        val fileChannel = inputStream.channel
-        val startOffset = fileDescriptor.startOffset
-        val declaredLength = fileDescriptor.declaredLength
-        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+        return context.assets.openFd(modelFileName).use { descriptor ->
+            FileInputStream(descriptor.fileDescriptor).use { stream ->
+                stream.channel.map(FileChannel.MapMode.READ_ONLY, descriptor.startOffset, descriptor.declaredLength)
+            }
+        }
     }
 
     @Synchronized
     override fun detect(bitmap: Bitmap, rotationDegrees: Int): DetectionFrame {
-        val interp = interpreter ?: return DetectionFrame(System.currentTimeMillis(), emptyList(), 0L)
+        val interp = checkNotNull(interpreter) { initializationError ?: "Detector is closed" }
 
         // 1. Preprocessing
         val t0 = SystemClock.elapsedRealtime()
@@ -87,7 +107,8 @@ class YoloVehicleDetector(
         var rawCandidateCount = 0
         var aboveThresholdCount = 0
         var validBoxCount = 0
-        var logNextBox = t2 - lastBoxDiagnosticTimeMs >= 2000L
+        var bestCandidateIndex = -1
+        var bestVehicleType = VehicleType.UNKNOWN
 
         for (i in 0 until 8400) {
             // Vehicle class scores in COCO (rows 4+cls)
@@ -114,6 +135,8 @@ class YoloVehicleDetector(
 
             if (maxScore > highestScoreInFrame) {
                 highestScoreInFrame = maxScore
+                bestCandidateIndex = i
+                bestVehicleType = vehicleType
             }
 
             if (maxScore >= 0.05f) {
@@ -128,24 +151,6 @@ class YoloVehicleDetector(
                 val h = predictions[3][i]
 
                 val rect = preprocessor.mapToNormalizedRect(cx, cy, w, h, preprocessed)
-                // Sample one threshold-passing box every two seconds. Keep decoding unchanged
-                // until these values confirm whether this model outputs pixels or normalized units.
-                if (logNextBox) {
-                    Log.d(
-                        TAG,
-                        "YOLO box diagnostic: class=$vehicleType confidence=$maxScore " +
-                            "rawCxCyWh=[$cx, $cy, $w, $h] " +
-                            "input=${preprocessor.inputWidth}x${preprocessor.inputHeight} " +
-                            "rotation=$rotationDegrees " +
-                            "oriented=${preprocessed.originalWidth}x${preprocessed.originalHeight} " +
-                            "scale=${preprocessed.scale} padX=${preprocessed.padX} padY=${preprocessed.padY} " +
-                            "mappedLTRB=[${rect.left}, ${rect.top}, ${rect.right}, ${rect.bottom}] " +
-                            "mappedWidth=${rect.width} mappedHeight=${rect.height} area=${rect.area} " +
-                            "requiredArea=$minNormalizedArea requiredWidthHeight=0.01"
-                    )
-                    lastBoxDiagnosticTimeMs = t2
-                    logNextBox = false
-                }
                 if (rect.area >= minNormalizedArea && rect.width > 0.01f && rect.height > 0.01f) {
                     validBoxCount++
                     candidateList.add(
@@ -162,6 +167,38 @@ class YoloVehicleDetector(
 
         // Apply Non-Maximum Suppression (NMS)
         val nmsVehicles = applyNms(candidateList, nmsIoUThreshold)
+        // Diagnose the strongest vehicle score, including frames where none passes confidence.
+        val boxSummary = if (bestCandidateIndex >= 0) {
+            val i = bestCandidateIndex
+            val cx = predictions[0][i]
+            val cy = predictions[1][i]
+            val w = predictions[2][i]
+            val h = predictions[3][i]
+            val rect = preprocessor.mapToNormalizedRect(cx, cy, w, h, preprocessed)
+            val result = when {
+                highestScoreInFrame < minConfidence -> "below confidence threshold"
+                !rect.area.isFinite() -> "non-finite coordinates"
+                rect.width <= 0f || rect.height <= 0f -> "empty after clipping"
+                rect.width <= 0.01f || rect.height <= 0.01f -> "width/height too small"
+                rect.area < minNormalizedArea -> "area too small"
+                else -> "passed size filter"
+            }
+            val summary = String.format(Locale.US,
+                "%s raw xywh: %.4f, %.4f, %.4f, %.4f\nMapped w/h/area: %.4f / %.4f / %.6f\nBox check: %s",
+                bestVehicleType, cx, cy, w, h, rect.width, rect.height, rect.area, result)
+            if (t2 - lastBoxDiagnosticTimeMs >= 2000L) {
+                Log.d(TAG, "YOLO box diagnostic: revision=$DIAGNOSTIC_REVISION class=$bestVehicleType " +
+                    "confidence=$highestScoreInFrame rawCxCyWh=[$cx, $cy, $w, $h] " +
+                    "rotation=$rotationDegrees oriented=${preprocessed.originalWidth}x${preprocessed.originalHeight} " +
+                    "scale=${preprocessed.scale} padX=${preprocessed.padX} padY=${preprocessed.padY} " +
+                    "mappedLTRB=[${rect.left}, ${rect.top}, ${rect.right}, ${rect.bottom}] " +
+                    "mappedWidth=${rect.width} mappedHeight=${rect.height} area=${rect.area} result=$result")
+                lastBoxDiagnosticTimeMs = t2
+            }
+            summary
+        } else {
+            "No positive finite vehicle scores"
+        }
         val t3 = SystemClock.elapsedRealtime()
         latestPostprocessTimeMs = t3 - t2
         
@@ -175,7 +212,8 @@ class YoloVehicleDetector(
             rawCount = rawCandidateCount,
             aboveConfCount = aboveThresholdCount,
             validBoxCount = validBoxCount,
-            afterNmsCount = nmsVehicles.size
+            afterNmsCount = nmsVehicles.size,
+            boxSummary = boxSummary
         )
 
         return DetectionFrame(
@@ -225,12 +263,14 @@ class YoloVehicleDetector(
         return if (unionArea <= 0f) 0f else interArea / unionArea
     }
 
+    @Synchronized
     override fun close() {
         interpreter?.close()
         interpreter = null
     }
 
     companion object {
+        const val DIAGNOSTIC_REVISION = "normalized-boxes-v2"
         private const val TAG = "YoloVehicleDetector"
     }
 }

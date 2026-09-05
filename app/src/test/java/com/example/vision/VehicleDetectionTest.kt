@@ -94,6 +94,25 @@ class VehicleDetectionTest {
     }
 
     @Test
+    fun testLatestS24LogUsesInputPixelsBeforeRemovingPadding() {
+        val preprocessor = VehicleDetectionPreprocessor()
+        val frame = VehicleDetectionPreprocessor.PreprocessedFrame(
+            inputBuffer = java.nio.ByteBuffer.allocateDirect(0),
+            originalWidth = 480, originalHeight = 640,
+            scale = 1f, padX = 80f, padY = 0f
+        )
+        val rect = preprocessor.mapToNormalizedRect(
+            cx = 0.5016252f, cy = 0.36920905f,
+            w = 0.09093833f, h = 0.05980053f, frame = frame
+        )
+        assertEquals(0.44154138f, rect.left, 0.00001f)
+        assertEquals(0.33930879f, rect.top, 0.00001f)
+        assertEquals(0.56279249f, rect.right, 0.00001f)
+        assertEquals(0.39910931f, rect.bottom, 0.00001f)
+        assertTrue(rect.width > 0.01f && rect.height > 0.01f && rect.area >= 0.0005f)
+    }
+
+    @Test
     fun testVehicleTypeEnumClasses() {
         // Ensure all required vehicle types for Phase 1 are present
         val types = VehicleType.values()

@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.BuildConfig
 import com.example.service.DashcamForegroundService
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.MultiplePermissionsState
@@ -91,6 +92,12 @@ fun MainScreen(onNavigateToDebug: () -> Unit = {}) {
                         Text("⚙️", fontSize = 20.sp)
                     }
                 }
+                Text(
+                    text = "Version ${BuildConfig.VERSION_NAME} | ${BuildConfig.GIT_REVISION}",
+                    color = VDashTextMuted,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)
+                )
                 Divider(color = VDashBorder, thickness = 1.dp)
             }
         },

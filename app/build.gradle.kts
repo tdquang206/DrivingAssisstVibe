@@ -9,6 +9,26 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
+// Provider-backed commands let Gradle notice commit/status changes even with
+// configuration caching enabled. Source ZIPs without Git still build as "unknown".
+fun gitOutput(vararg arguments: String): String? = runCatching {
+  val output = providers.exec {
+    workingDir(rootProject.projectDir)
+    commandLine("git", *arguments)
+    isIgnoreExitValue = true
+  }
+  if (output.result.get().exitValue == 0) output.standardOutput.asText.get().trim() else null
+}.getOrNull()
+
+val gitCommit = gitOutput("rev-parse", "HEAD")?.takeIf { it.matches(Regex("[0-9a-f]{40,64}")) }
+val gitStatus = gitOutput("status", "--porcelain", "--untracked-files=normal")
+val gitRevision = when {
+  gitCommit == null -> "unknown"
+  gitStatus == null -> "${gitCommit.take(6)}-status-unknown"
+  gitStatus.isNotEmpty() -> "${gitCommit.take(6)}-dirty"
+  else -> gitCommit.take(6)
+}
+
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
@@ -19,6 +39,7 @@ android {
     targetSdk = 36
     versionCode = 1
     versionName = "1.0"
+    buildConfigField("String", "GIT_REVISION", "\"$gitRevision\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

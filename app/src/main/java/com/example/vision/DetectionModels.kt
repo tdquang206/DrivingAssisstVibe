@@ -36,7 +36,8 @@ data class DiagnosticMetrics(
     val rawCount: Int = 0,
     val aboveConfCount: Int = 0,
     val validBoxCount: Int = 0,
-    val afterNmsCount: Int = 0
+    val afterNmsCount: Int = 0,
+    val boxSummary: String = "Waiting for a frame"
 )
 
 data class DetectionFrame(

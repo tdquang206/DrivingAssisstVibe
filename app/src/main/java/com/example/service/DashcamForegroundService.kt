@@ -86,6 +86,11 @@ class DashcamForegroundService : Service(), LifecycleOwner {
         overlayController = OverlayController(this, locationTracker.currentSpeedKmh)
         cameraManager = CameraManager(this)
         vehicleDetector = YoloVehicleDetector(this)
+        _detectionState.value = VehicleDetectionState(stats = DetectorStats(
+            modelIdentity = vehicleDetector!!.modelIdentity,
+            detectorStatus = vehicleDetector!!.initializationError?.let { "ERROR: $it" }
+                ?: "Model ready; waiting for camera frames"
+        ))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -131,8 +136,6 @@ class DashcamForegroundService : Service(), LifecycleOwner {
             try {
                 val detector = vehicleDetector
                 if (detector == null) {
-                    imageProxy.close()
-                    isAnalyzing.set(false)
                     return@Analyzer
                 }
 
@@ -140,7 +143,11 @@ class DashcamForegroundService : Service(), LifecycleOwner {
                 val bitmap = imageProxy.toBitmap()
                 lastInferenceTimestamp = now
 
-                val frame = detector.detect(bitmap, rotationDegrees)
+                val frame = try {
+                    detector.detect(bitmap, rotationDegrees)
+                } finally {
+                    bitmap.recycle()
+                }
 
                 val completedNow = SystemClock.elapsedRealtime()
                 recentInferenceTimestamps.addLast(completedNow)
@@ -149,7 +156,7 @@ class DashcamForegroundService : Service(), LifecycleOwner {
                 }
                 val currentFps = if (recentInferenceTimestamps.size > 1) {
                     val windowDurationSec = (completedNow - recentInferenceTimestamps.first()) / 1000f
-                    if (windowDurationSec > 0f) recentInferenceTimestamps.size / windowDurationSec else 0f
+                    if (windowDurationSec > 0f) (recentInferenceTimestamps.size - 1) / windowDurationSec else 0f
                 } else {
                     0f
                 }
@@ -175,7 +182,11 @@ class DashcamForegroundService : Service(), LifecycleOwner {
                     aboveConfCount = frame.diagnostics.aboveConfCount,
                     validBoxCount = frame.diagnostics.validBoxCount,
                     afterNmsCount = frame.diagnostics.afterNmsCount,
-                    minConfidence = (detector as? YoloVehicleDetector)?.minConfidence ?: 0.40f
+                    minConfidence = detector.minConfidence,
+                    processedFrames = inferenceCount,
+                    detectorStatus = "Running",
+                    modelIdentity = detector.modelIdentity,
+                    boxSummary = frame.diagnostics.boxSummary
                 )
 
                 _detectionState.value = VehicleDetectionState(
@@ -185,6 +196,11 @@ class DashcamForegroundService : Service(), LifecycleOwner {
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Image analysis error", e)
+                _detectionState.value = VehicleDetectionState(stats = DetectorStats(
+                    processedFrames = inferenceCount,
+                    modelIdentity = vehicleDetector?.modelIdentity.orEmpty(),
+                    detectorStatus = "ERROR: ${e.message ?: e.javaClass.simpleName}"
+                ))
             } finally {
                 imageProxy.close()
                 isAnalyzing.set(false)

@@ -5,6 +5,8 @@ import android.widget.FrameLayout
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -13,24 +15,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.BuildConfig
 import com.example.service.DashcamForegroundService
 import com.example.vision.VehicleType
+import com.example.vision.YoloVehicleDetector
 import kotlin.math.roundToInt
 
 import androidx.activity.compose.BackHandler
 
 @Composable
 fun VehicleDebugScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val detectionState by DashcamForegroundService.detectionState.collectAsStateWithLifecycle()
-    val isServiceActive = DashcamForegroundService.activeService != null
+    val isServiceActive by DashcamForegroundService.isDriving.collectAsStateWithLifecycle()
 
     BackHandler {
         onBack()
@@ -150,10 +150,18 @@ fun VehicleDebugScreen(onBack: () -> Unit) {
                 .align(Alignment.BottomStart)
                 .padding(16.dp)
                 .navigationBarsPadding()
+                .fillMaxWidth()
+                .heightIn(max = 380.dp)
                 .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
             val s = detectionState.stats
+            Text("Version ${BuildConfig.VERSION_NAME} | ${BuildConfig.GIT_REVISION}", color = Color.White, fontSize = 12.sp)
+            Text("Detector: ${YoloVehicleDetector.DIAGNOSTIC_REVISION}", color = Color.Cyan, fontSize = 12.sp)
+            Text(s.detectorStatus, color = if (s.detectorStatus.startsWith("ERROR")) Color.Red else Color.White, fontSize = 12.sp)
+            Text("Model SHA: ${s.modelIdentity} | Frames: ${s.processedFrames}", color = Color.White, fontSize = 12.sp)
+            Text(s.boxSummary, color = Color.Cyan, fontSize = 12.sp)
             Text("FPS: ${s.fps}", color = Color.White, fontSize = 14.sp)
             Text("Latest inference: ${s.latestInferenceTimeMs} ms", color = Color.White, fontSize = 14.sp)
             Text("Avg inference: ${s.avgInferenceTimeMs} ms", color = Color.White, fontSize = 14.sp)
@@ -162,7 +170,7 @@ fun VehicleDebugScreen(onBack: () -> Unit) {
             Text("Skipped Frames: ${s.skippedFrames}", color = Color.White, fontSize = 14.sp)
             Spacer(modifier = Modifier.height(6.dp))
             Text("Max vehicle conf: ${"%.2f".format(s.maxVehicleConf)}", color = Color.Yellow, fontSize = 14.sp)
-            Text("Vehicle raw: ${s.rawCandidatesCount}", color = Color.White, fontSize = 14.sp)
+            Text("Vehicle scores >= 0.05: ${s.rawCandidatesCount}", color = Color.White, fontSize = 14.sp)
             Text("Above ${"%.2f".format(s.minConfidence)}: ${s.aboveConfCount}", color = Color.White, fontSize = 14.sp)
             Text("Valid boxes: ${s.validBoxCount}", color = Color.White, fontSize = 14.sp)
             Text("After NMS: ${s.afterNmsCount}", color = Color.White, fontSize = 14.sp)
