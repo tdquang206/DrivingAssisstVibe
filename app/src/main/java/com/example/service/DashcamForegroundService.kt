@@ -52,6 +52,9 @@ class DashcamForegroundService : Service(), LifecycleOwner {
 
     companion object {
         private const val TAG = "DashcamService"
+        private val _isDriving = MutableStateFlow(false)
+        val isDriving: StateFlow<Boolean> = _isDriving.asStateFlow()
+
         private val _detectionState = MutableStateFlow(VehicleDetectionState())
         val detectionState: StateFlow<VehicleDetectionState> = _detectionState.asStateFlow()
 
@@ -104,6 +107,8 @@ class DashcamForegroundService : Service(), LifecycleOwner {
     }
 
     private fun startDrive() {
+        if (_isDriving.value) return
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Dashcam Active")
             .setContentText("Drive mode is running in the background.")
@@ -187,9 +192,11 @@ class DashcamForegroundService : Service(), LifecycleOwner {
         }
 
         cameraManager.startCamera(this, analyzer)
+        _isDriving.value = true
     }
 
     private fun stopDrive() {
+        _isDriving.value = false
         locationTracker.stopTracking()
         overlayController.stop()
         cameraManager.stopCamera()
@@ -199,6 +206,7 @@ class DashcamForegroundService : Service(), LifecycleOwner {
     }
 
     override fun onDestroy() {
+        _isDriving.value = false
         activeService = null
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         super.onDestroy()

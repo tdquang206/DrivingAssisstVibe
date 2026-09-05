@@ -20,6 +20,7 @@ class YoloVehicleDetector(
 
     private val preprocessor = VehicleDetectionPreprocessor(inputWidth = 640, inputHeight = 640)
     private var interpreter: Interpreter? = null
+    private var lastBoxDiagnosticTimeMs = -2000L
 
     // Output shape for YOLOv8n: [1, 84, 8400]
     private val outputBuffer = Array(1) { Array(84) { FloatArray(8400) } }
@@ -86,6 +87,7 @@ class YoloVehicleDetector(
         var rawCandidateCount = 0
         var aboveThresholdCount = 0
         var validBoxCount = 0
+        var logNextBox = t2 - lastBoxDiagnosticTimeMs >= 2000L
 
         for (i in 0 until 8400) {
             // Vehicle class scores in COCO (rows 4+cls)
@@ -126,6 +128,24 @@ class YoloVehicleDetector(
                 val h = predictions[3][i]
 
                 val rect = preprocessor.mapToNormalizedRect(cx, cy, w, h, preprocessed)
+                // Sample one threshold-passing box every two seconds. Keep decoding unchanged
+                // until these values confirm whether this model outputs pixels or normalized units.
+                if (logNextBox) {
+                    Log.d(
+                        TAG,
+                        "YOLO box diagnostic: class=$vehicleType confidence=$maxScore " +
+                            "rawCxCyWh=[$cx, $cy, $w, $h] " +
+                            "input=${preprocessor.inputWidth}x${preprocessor.inputHeight} " +
+                            "rotation=$rotationDegrees " +
+                            "oriented=${preprocessed.originalWidth}x${preprocessed.originalHeight} " +
+                            "scale=${preprocessed.scale} padX=${preprocessed.padX} padY=${preprocessed.padY} " +
+                            "mappedLTRB=[${rect.left}, ${rect.top}, ${rect.right}, ${rect.bottom}] " +
+                            "mappedWidth=${rect.width} mappedHeight=${rect.height} area=${rect.area} " +
+                            "requiredArea=$minNormalizedArea requiredWidthHeight=0.01"
+                    )
+                    lastBoxDiagnosticTimeMs = t2
+                    logNextBox = false
+                }
                 if (rect.area >= minNormalizedArea && rect.width > 0.01f && rect.height > 0.01f) {
                     validBoxCount++
                     candidateList.add(

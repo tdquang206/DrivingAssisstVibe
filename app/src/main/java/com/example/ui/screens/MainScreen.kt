@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.service.DashcamForegroundService
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.MultiplePermissionsState
@@ -49,7 +50,7 @@ fun MainScreen(onNavigateToDebug: () -> Unit = {}) {
     val permissionState = rememberMultiplePermissionsState(permissions)
     val allGranted = permissionState.allPermissionsGranted && isOverlayGranted
 
-    var isDriving by remember { mutableStateOf(false) }
+    val isDriving by DashcamForegroundService.isDriving.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -152,13 +153,11 @@ fun MainScreen(onNavigateToDebug: () -> Unit = {}) {
                                 } else {
                                     context.startService(intent)
                                 }
-                                isDriving = true
                             } else {
                                 val intent = Intent(context, DashcamForegroundService::class.java).apply {
                                     action = DashcamForegroundService.ACTION_STOP_DRIVE
                                 }
                                 context.startService(intent)
-                                isDriving = false
                             }
                         },
                         enabled = allGranted || isDriving,
